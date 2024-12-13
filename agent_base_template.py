@@ -9,7 +9,7 @@ import asyncio
 import math
 
 # Basic Configurations
-model = "qwen2.5:7b-instruct-q4_0"
+model = "qwen2.5:14b"
 model_url = "http://127.0.0.1:11434/v1"
 api_key = "YOUR_API_KEY"
 model_capabilities = {
@@ -64,7 +64,7 @@ math_agent = AssistantAgent(
 async def main() -> None:
     # Define termination condition
     termination_approve = TextMentionTermination("TERMINATE")
-    termination_max = MaxMessageTermination(max_messages=5)
+    termination_max = MaxMessageTermination(max_messages=10)
     # 1. user message(str)
     # 2. FunctionCall(id, arg, name)
     # 3. FunctionExecutionResult(content, call_id) id==call_id
@@ -79,7 +79,7 @@ async def main() -> None:
 
     # Run the team and stream messages to the console
     stream = agent_team.run_stream(
-        task="I have earned 1k$, I need to share it with 3 of my friends. how much would each of us have if we want to buy a 50$ cake?"
+        task="Write a python code to greet a user named James"
     )
     await Console(stream)
 
