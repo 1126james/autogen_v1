@@ -1,5 +1,3 @@
-### BASIC TEMPLATE OF AUTOGEN !!! DO NOT EDIT!!!
-
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.agents._code_executor_agent import CodeExecutorAgent
 from autogen_agentchat.conditions import TextMentionTermination, MaxMessageTermination
@@ -13,8 +11,10 @@ import asyncio
 import math
 from pathlib import Path
 import venv
+from prompts import coding_assistant_prompt, code_checking_prompt
 
-# Basic Configurations
+### Basic Configurations
+# Configure our base model
 model = "qwen2.5:14b"
 model_url = "http://127.0.0.1:11434/v1"
 api_key = "YOUR_API_KEY"
@@ -24,71 +24,50 @@ model_capabilities = {
                 "json_output": False
             }
 
-# Define Tools
-async def calculator(expression: str) -> str:
-    try:
-        safe_dict = {
-            'abs': abs,
-            'round': round,
-            'pi': math.pi,
-            'e': math.e,
-            'sqrt': math.sqrt,
-            'sin': math.sin,
-            'cos': math.cos,
-            'tan': math.tan,
-            'log': math.log,
-            'log10': math.log10
-        }
-        
-        result = eval(expression, {"__builtins__": {}}, safe_dict)
-        
-        if isinstance(result, (int, float)):
-            if result.is_integer():
-                return str(int(result))
-            return f"{result:.6f}".rstrip('0').rstrip('.')
-        
-        return str(result)
-        
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-### Create Agents
-# 1.
-base_agent = AssistantAgent(
-        name="base_agent",
-        reflect_on_tool_use= True,
-        model_client=OpenAIChatCompletionClient(
+# Config the client on top of the base model
+model_client = OpenAIChatCompletionClient(
             model=model,
             base_url=model_url,
             api_key=api_key,
             model_capabilities=model_capabilities
-        ),
-        tools=[calculator],
-        system_message="Use the appropriate tools to solve tasks. DONT force unnecessary tool usage. For coding task, ONLY EXPLICITLY provide the code WITHOUT executing."
-    )
+        )
 
-# 2.
-code_executor = LocalCommandLineCodeExecutor(work_dir="coding")
-code_executor = CodeExecutorAgent("code_executor", code_executor=code_executor,)
+### Create Agents
+# 1. coding_assistant
+coding_assistant = AssistantAgent(
+    name="coding_assistant",
+    reflect_on_tool_use= True,
+    model_client=model_client,
+    system_message=coding_assistant_prompt)
 
-# 3.
+# 2. code_executor_agent
+work_dir = Path("coding").absolute()
+work_dir.mkdir(exist_ok=True)
+venv_dir = str(work_dir / ".venv")
+venv_builder = venv.EnvBuilder(with_pip=True)
+if not Path(venv_dir).exists():
+    venv_builder.create(venv_dir)
+venv_context = venv_builder.ensure_directories(venv_dir)
+code_executor = LocalCommandLineCodeExecutor(
+    work_dir=work_dir,  # Use string path instead of Path object
+    virtual_env_context=venv_context
+)
+code_executor_agent = CodeExecutorAgent("code_executor", code_executor=code_executor)
+
+# 3.code_checker
 code_checker = AssistantAgent(
         name="code_checker",
         reflect_on_tool_use= True,
-        model_client=OpenAIChatCompletionClient(
-            model=model,
-            base_url=model_url,
-            api_key=api_key,
-            model_capabilities=model_capabilities
-        ),
-        system_message="Check whether the output matches the code. If yes, Reply with TERMINATE. If no, EXPLICITLY provide concise ordered suggestions on what needs to be fixed without providing any code."
-    )
+        model_client=model_client,
+        system_message=code_checking_prompt)
 
 # Define workflow
 async def main() -> None:
+    # List of agents
+    agents = [coding_assistant, code_executor_agent, code_checker]
     # Define termination condition
     termination_approve = TextMentionTermination("TERMINATE")
-    termination_max = MaxMessageTermination(max_messages=10)
+    termination_max = MaxMessageTermination(max_messages=len(agents)*3)
     # 1. user message(str)
     # 2. FunctionCall(id, arg, name)
     # 3. FunctionExecutionResult(content, call_id) id==call_id
@@ -97,13 +76,13 @@ async def main() -> None:
 
     # Define a team
     agent_team = RoundRobinGroupChat(
-        [base_agent, code_executor, code_checker], 
-        termination_condition=termination
+        agents, 
+        termination_condition=termination_approve
     )
 
     # Run the team and stream messages to the console
     stream = agent_team.run_stream(
-        task="Write a python code to greet a user named James"
+        task="draw me a smiley face"
     )
     await Console(stream)
 
