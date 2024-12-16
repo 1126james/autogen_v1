@@ -3,6 +3,7 @@ from autogen_agentchat.agents._code_executor_agent import CodeExecutorAgent
 from autogen_agentchat.conditions import TextMentionTermination, MaxMessageTermination
 from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_agentchat.ui import Console
 from autogen_core import CancellationToken
 from autogen_ext.code_executors.local import LocalCommandLineCodeExecutor
 from autogen_ext.models.openai import OpenAIChatCompletionClient
@@ -98,7 +99,7 @@ async def run_cleaning_pipeline(df: pd.DataFrame, data_dict: Dict[str, Any]) -> 
     )
     
     cleaning_task = f"Clean this dataset according to its profile:\n{data_dict}"
-    await cleaning_team.run(task=cleaning_task)
+    await Console(cleaning_team.run_stream(task=cleaning_task))
     
     # Get cleaned dataframe and updated profile
     cleaned_df = df  # This should be updated based on code_executor's output
@@ -111,7 +112,7 @@ async def run_cleaning_pipeline(df: pd.DataFrame, data_dict: Dict[str, Any]) -> 
     )
     
     transform_task = f"Suggest and apply transformations based on this profile:\n{cleaned_profile}"
-    await transformation_team.run(task=transform_task)
+    await Console(transformation_team.run_stream(task=transform_task))
     
     # Return the final processed dataframe
     return cleaned_df  # This should be the transformed version from code_executor
