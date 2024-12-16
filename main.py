@@ -9,11 +9,9 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 import asyncio
 from pathlib import Path
 import venv
-from prompts import (
-    cleaning_prompt,
-    code_checking_prompt,
-    transformation_prompt
-)
+from prompts.cleaning_prompt import cleaning_prompt
+from prompts.transformation_prompt import transformation_prompt
+from prompts.code_checking_prompt import code_checking_prompt
 import pandas as pd
 from typing import Dict, Any
 

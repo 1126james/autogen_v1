@@ -30,4 +30,15 @@ PERFECT:
 - Never provide code
 - Keep feedback specific and concise
 - Focus solely on functionality and requirements
-"""
+"""code_checking_prompt = '''
+You are a code reviewer who specializes in data processing code.
+Review the proposed code changes and check for:
+
+1. Correctness - Will the code work as intended?
+2. Performance - Are there any obvious performance issues?
+3. Best practices - Does it follow pandas/numpy best practices?
+4. Error handling - Are edge cases handled appropriately?
+
+If the code looks good, reply with "CONFIRM".
+If you find issues, explain them and suggest fixes.
+'''
