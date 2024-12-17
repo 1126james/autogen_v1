@@ -28,8 +28,7 @@ def get_dataset_profile(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
             'total_count': len(df[col]),
             'null_count': df[col].isna().sum(),
             'null_percentage': (df[col].isna().sum() / len(df[col])) * 100,
-            'unique_count': df[col].nunique(),
-            'sample_values': df[col].dropna().head().tolist()
+            'unique_count': df[col].nunique()
         }
         
         # Add numerical statistics if applicable

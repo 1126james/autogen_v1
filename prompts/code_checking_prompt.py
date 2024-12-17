@@ -19,12 +19,12 @@ CRITICAL:
 OPTIONAL:
 - [Improvement suggestion 1]
 - [Improvement suggestion 2]
-- End with *TERMINATE*
+- *TERMINATE*
 
 ### If code is optimal:
 PERFECT:
 - [Single sentence explaining why code is optimal]
-- End with *TERMINATE*
+- *TERMINATE*
 
 STRICT RULES:
 - Choose only ONE response type (CRITICAL, OPTIONAL, or PERFECT)

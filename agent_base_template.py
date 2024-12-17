@@ -9,7 +9,7 @@ import asyncio
 import math
 
 # Basic Configurations
-model = "qwen2.5:14b"
+model = "qwen2.5:7b-instruct-q4_0"
 model_url = "http://127.0.0.1:11434/v1"
 api_key = "YOUR_API_KEY"
 model_capabilities = {
