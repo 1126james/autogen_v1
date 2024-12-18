@@ -4,23 +4,21 @@ from autogen_agentchat.conditions import TextMentionTermination, MaxMessageTermi
 from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.ui import Console
-from autogen_core import CancellationToken
 from autogen_ext.code_executors.local import LocalCommandLineCodeExecutor
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 import asyncio
 from pathlib import Path
 from copy_file import copy_file
 import venv
-# from prompts.cleaning_prompt import cleaning_prompt
-# from prompts.transformation_prompt import transformation_prompt
-# from prompts.code_checking_prompt import code_checking_prompt
+from prompts import cleaning_reasoning_prompt, cleaning_coding_prompt, code_checking_prompt
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
+
 
 # ONLY EDIT HERE
-# Model Configuration
-model_config = {
-    "model": "qwen2.5:72b-instruct-q4_k_m",
+# Reasoning Model Configuration
+instruct_model_config = {
+    "model": "qwen2.5:32b-instruct-q8_0",
     "base_url": "http://34.204.63.234:11434/v1",
     "api_key": "YOUR_API_KEY",
     "capabilities": {
@@ -30,218 +28,134 @@ model_config = {
     }
 }
 
-
-client_config = OpenAIChatCompletionClient(
-    model=model_config["model"],
-    base_url=model_config["base_url"],
-    api_key=model_config["api_key"],
-    model_capabilities=model_config["capabilities"]
+instruct_client_config = OpenAIChatCompletionClient(
+    model=instruct_model_config["model"],
+    base_url=instruct_model_config["base_url"],
+    api_key=instruct_model_config["api_key"],
+    model_capabilities=instruct_model_config["capabilities"]
 )
-# setup agents - cleaning team (1)
-### 1. Cleaning code generator agent
-cleaning_agent = AssistantAgent(
-    name="cleaning_agent",
-    model_client=client_config, 
-    system_message="""
-<|im_start|>system
-<identity>You are a data cleaning specialist focusing on data quality and integrity.</identity>
 
-<context>
-You will analyze a data dictionary containing dataset metadata (column types, null counts, unique values, etc.) and generate optimized cleaning code.
-You must preserve data integrity and handle edge cases appropriately.
-</context>
-
-<input_format>
-Data dictionary structure:
-{
-    "dataset_info": {
-        "total_rows": int,
-        "total_columns": int,
-        "duplicate_rows": int
-    },
-    "columns": {
-        "column_name": {
-            "dtype": str,
-            "null_count": int,
-            "unique_count": int,
-            "sample_values": list
-        }
+# Coding Model Configuration
+code_model_config = {
+    "model": "qwen2.5-coder:32b-instruct-q8_0",
+    "base_url": "http://34.204.63.234:11434/v1",
+    "api_key": "YOUR_API_KEY",
+    "capabilities": {
+        "vision": False,
+        "function_calling": False,
+        "json_output": False
     }
 }
-</input_format>
 
-<output_format>
-Provide exactly THREE blocks in this order:
+code_client_config = OpenAIChatCompletionClient(
+    model=code_model_config["model"],
+    base_url=code_model_config["base_url"],
+    api_key=code_model_config["api_key"],
+    model_capabilities=code_model_config["capabilities"]
+)
+# setup agents - cleaning team (1)
+### 1.1 Cleaning reasoning agent
+async def create_agents(filepath: Path) -> Tuple[AssistantAgent, AssistantAgent, CodeExecutorAgent, AssistantAgent]:
+    async def create_cleaning_reasoning_agent():
+        cleaning_reasoning_agent = AssistantAgent(
+            name="cleaning_agent",
+            model_client=instruct_client_config, 
+            system_message=f"""You are the first agent in the data cleaning pipeline.""" # To-do
+        ) # To-do, refine prompt
+        return cleaning_reasoning_agent
 
-1. SINGLE shell command block with ALL required libraries:
-```shell
+    ### 1.2 Cleaning code generator agent
+    async def create_cleaning_coding_agent() -> AssistantAgent:
+        cleaning_coding_agent = AssistantAgent(
+            name="cleaning_coding_agent",
+            model_client=code_client_config,
+            system_message=f"""
+Data Cleaning Code Generator
+
+Purpose: Generate data cleaning code based on data dictionary metadata.
+
+Dataset Location: {str(filepath)}
+
+Instructions:
+- Explicitly output necessary installation commands (sh) and cleaning code (python)
+- No analysis or insights included
+- Code only in two distinct blocks:
+  1. sh command for library installation
+  2. Python cleaning code
+
+Requirements:
+- Use exact file paths and column names
+- Python code only
+- Keep 2 code blocks separated
+- Correct code block format
+
+Output Format:
+```sh
 pip install lib1 lib2 lib3
 ```
-
-2. SINGLE Python code block with ALL cleaning code:
 ```python
-# All your code here including:
-# - imports
-# - data loading
-# - cleaning functions
-# - main execution
-# - error handling
-# - validation
+# Your python code line 1
+# Your python code line 2
 ```
 
-3. SINGLE explanation block with bullet points:
-- What issues were addressed
-- Why specific approaches were chosen
-- Performance considerations
-</output_format>
+Rules:
+1. Reference exact paths/columns
+2. Sh and Python code only
+3. Only 2 blocks in response (1 for sh, 1 for py)
+4. At the end, use the head() function to display top 5 rows in terminal.
+5. At the end, save the modified dataset to 'modified_'+ {str(filepath.name)} under the directory 'outputs/'
+""")
+        return cleaning_coding_agent
 
-<rules>
-1. Reference exact file paths and column names
-2. Generate memory-efficient code
-3. Include data validation
-4. Handle errors gracefully
-5. Add code comments
-6. Combine ALL code in respective single blocks
-7. No mixing or splitting of code blocks
-</rules>
+    ### 2. Code executor
+    # Setup working directory
+    async def create_code_executor() -> CodeExecutorAgent:
+        work_dir = Path("coding").absolute()
+        work_dir.mkdir(exist_ok=True)
 
-<best_practices>
-- Use pandas efficient methods
-- Process data in chunks if needed
-- Validate data types
-- Log cleaning steps
-- Include error handling
-</best_practices>
-<|im_end|>
-"""
-) # To-do, refine prompt
+        # Setup venv sheets and output directory
+        sheets_dir = Path("coding/sheets").absolute()
+        sheets_dir.mkdir(parents=True, exist_ok=True)
+        outputs_dir = Path("coding/outputs").absolute()
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        
 
-### 2. Code executor
-# Setup working directory
-async def create_code_executor(filepath: Path) -> CodeExecutorAgent:
-    work_dir = Path("coding").absolute()
-    work_dir.mkdir(exist_ok=True)
+        # Define source and destination
+        source_file = filepath.absolute()
+        destination = sheets_dir / source_file.name  # Use the filename for destination
 
-    # Setup venv sheets directory
-    sheets_dir = Path("coding/sheets").absolute()
-    sheets_dir.mkdir(parents=True, exist_ok=True)
+        # Copy the file from root to venv
+        copy_file(source_file, destination)
 
-    # Define source and destination
-    source_file = filepath.absolute()
-    destination = sheets_dir / source_file.name  # Use the filename for destination
+        # Setup venv for code executor
+        venv_dir = work_dir / ".venv"
+        venv_builder = venv.EnvBuilder(with_pip=True)
+        if not venv_dir.exists():
+            venv_builder.create(venv_dir)
+        venv_context = venv_builder.ensure_directories(venv_dir)
 
-    # Copy the file from root to venv
-    copy_file(source_file, destination)
+        executor = LocalCommandLineCodeExecutor(
+            work_dir=str(work_dir),
+            virtual_env_context=venv_context
+        )
+        return CodeExecutorAgent("code_executor", code_executor=executor)
 
-    # Setup venv for code executor
-    venv_dir = work_dir / ".venv"
-    venv_builder = venv.EnvBuilder(with_pip=True)
-    if not venv_dir.exists():
-        venv_builder.create(venv_dir)
-    venv_context = venv_builder.ensure_directories(venv_dir)
-
-    executor = LocalCommandLineCodeExecutor(
-        work_dir=str(work_dir),
-        virtual_env_context=venv_context
-    )
-    return CodeExecutorAgent("code_executor", code_executor=executor)
-
-### 3. code checker agent
-code_checker = AssistantAgent(
-    name="code_checker",
-    model_client=client_config,
-    system_message="""
-<|im_start|>system
-<identity>You are a senior code quality analyst specializing in data processing, with expertise in pandas, numpy, and Python performance optimization.</identity>
-
-<review_criteria>
-1. FUNCTIONALITY
-   - Correct data transformations
-   - Requirements fulfillment
-   - Data integrity preservation
-   - Type consistency
-
-2. PERFORMANCE
-   - Memory efficiency
-   - Processing speed
-   - Resource utilization
-   - Scalability concerns
-
-3. CODE QUALITY
-   - Pandas/Numpy best practices
-   - Vectorization usage
-   - Memory management
-   - Code readability
-
-4. ERROR HANDLING
-   - Edge cases coverage
-   - Data validation
-   - Error recovery
-   - Exception handling
-</review_criteria>
-
-<severity_definitions>
-CRITICAL: Issues that...
-- Cause incorrect results
-- Lead to runtime errors
-- Break data integrity
-- Violate core requirements
-- Create security vulnerabilities
-
-OPTIONAL: Suggestions for...
-- Performance optimization
-- Code maintainability
-- Resource efficiency
-- Better practices
-- Enhanced robustness
-
-PERFECT: Code that...
-- Meets all requirements
-- Uses optimal approaches
-- Follows best practices
-- Handles all edge cases
-</severity_definitions>
-
-<output_template>
-ONE of the following formats only:
-
-### Critical Issues Found:
-CRITICAL:
-- [Specific issue with direct impact]
-- [Specific issue with direct impact]
-*FIX THE CODE*
-
-### Improvements Possible:
-OPTIONAL:
-- [Specific improvement with benefit]
-- [Specific improvement with benefit]
-*TERMINATE*
-
-### Optimal Implementation:
-PERFECT:
-- [Evidence-based explanation of optimality]
-*TERMINATE*
-</output_template>
-
-<rules>
-STRICT REQUIREMENTS:
-1. Choose exactly ONE response category
-2. Never mix categories
-3. Never provide code snippets
-4. Link each issue to specific impact
-5. Focus on data processing context
-6. Provide actionable feedback only
-7. Reference specific functions/methods
-8. Consider scalability implications
-</rules>
-<|im_end|>
-""" # To-do
-)
+    ### 3. code checker agent
+    async def create_code_checker() -> AssistantAgent:
+        code_checker = AssistantAgent(
+            name="code_checker",
+            model_client=instruct_client_config,
+            system_message=code_checking_prompt # To-do
+        )
+        return code_checker
+    
+    list_of_agents = await asyncio.gather(create_cleaning_reasoning_agent(), create_cleaning_coding_agent(), create_code_executor(), create_code_checker())
+    return list_of_agents
 
 
 # transformation_assistant = AssistantAgent(
 #     name="transformation_assistant",
-#     model_client=client_config,
+#     model_client=instruct_client_config,
 #     system_message=transformation_prompt # To-do
 # )
 
@@ -249,23 +163,53 @@ async def run_cleaning_pipeline(df: pd.DataFrame, data_dict: Dict[str, Any], fil
     """
     Run the complete data cleaning and transformation pipeline
     """
-    code_executor = await create_code_executor(filepath=filepath)
-
-    cleaning_team = [cleaning_agent, code_executor, code_checker]
+    
+    # cleaning_reasoning, cleaning_coding, code_executor, code_checker
+    cleaning_team = await create_agents(filepath=filepath)
     
     # Setup termination conditions
     text_term = TextMentionTermination("TERMINATE")
-    len_term = MaxMessageTermination(9)
+    len_term = MaxMessageTermination(12)
     termination = text_term | len_term
     
     # First phase: Data Cleaning
-    cleaning_team = RoundRobinGroupChat(
+    cleaning_team_chat = RoundRobinGroupChat(
         cleaning_team,
         termination_condition=termination
     )
     # Based on the provided json data dictionary, explicity generate the python code to clean it specifically. Dont use any fictional placeholder, use actual column names and file names.\nData dictionary:
-    cleaning_task = f"\n\n# Data Dictionary:\n\n{data_dict}\n\n## Dataset Location:\n\n{str(filepath)}"
-    await Console(cleaning_team.run_stream(task=cleaning_task))
+    cleaning_task = f"""Data Cleaning Advisor
+
+Purpose: Provide basic data cleaning recommendations for each column.
+
+<Data Dictionary>
+{data_dict}
+</Data Dictionary>
+
+Dataset Location: {str(filepath)}
+
+Instructions:
+- Review data dictionary
+- EXPLICITLY ONLY output SIMPLE data cleaning techniques the dataset with the hint provided by the data dictionary.
+
+Output Format:
+
+For each column with issues:
+1. Column Name
+2. Issue Type
+3. Recommended Action
+4. Brief Reason
+
+Rules:
+1. Use exact ACTUAL column names
+2. Only basic cleaning actions
+3. Clear, simple explanations
+4. Focus on practical solutions
+5. Do not ask any questions.
+6. NO EDA and NO visualizations.
+"""
+    
+    await Console(cleaning_team_chat.run_stream(task=cleaning_task))
     
     # Get cleaned dataframe and updated profile
     # cleaned_df = df  # This should be updated based on code_executor's output

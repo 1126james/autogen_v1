@@ -1,7 +1,9 @@
-from .cleaning_prompt import cleaning_prompt
-from .confirm_prompt import confirm_prompt
+from .cleaning_reasoning_prompt import cleaning_reasoning_prompt
+from .cleaning_coding_prompt import cleaning_coding_prompt
+from .code_checking_prompt import code_checking_prompt
 
 __all__ = [
-    "cleaning_prompt",
-    "confirm_prompt",
+    "cleaning_reasoning_prompt",
+    "cleaning_coding_prompt",
+    "code_checking_prompt",
 ]
