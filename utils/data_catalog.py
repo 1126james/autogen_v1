@@ -3,7 +3,7 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Union
 
-def load_dataset(file_path: Union[str, Path]) -> pd.DataFrame:
+def LoadDataset(file_path: Union[str, Path]) -> pd.DataFrame:
     """
     Load various tabular data formats into a pandas DataFrame.
     Supports CSV, Excel, and other common formats.
@@ -16,7 +16,7 @@ def load_dataset(file_path: Union[str, Path]) -> pd.DataFrame:
     else:
         raise ValueError(f"Unsupported file format: {file_path.suffix}")
 
-def get_dataset_profile(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+def GetDatasetProfile(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
     """
     Create a comprehensive profile of the dataset including statistics and metadata.
     """
@@ -50,15 +50,3 @@ def get_dataset_profile(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
         profile[col] = col_stats
     
     return profile
-
-def save_dataset(df: pd.DataFrame, file_path: Union[str, Path], format: str = 'csv') -> None:
-    """
-    Save the processed dataset in the specified format.
-    """
-    file_path = Path(file_path)
-    if format.lower() == 'csv':
-        df.to_csv(file_path, index=False)
-    elif format.lower() == 'excel':
-        df.to_excel(file_path, index=False)
-    else:
-        raise ValueError(f"Unsupported output format: {format}")
