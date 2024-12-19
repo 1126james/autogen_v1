@@ -1,9 +1,9 @@
 # Custom
-coding
-Scripts
+coding/
+Scripts/
 .aider*
-share
-bin
+share/
+bin/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
