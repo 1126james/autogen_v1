@@ -50,8 +50,8 @@ code_client_config = OpenAIChatCompletionClient(
 # setup agents - cleaning team (1)
 ### 1.1 Cleaning reasoning agent
 async def create_agents(filepath: Path) -> Tuple[AssistantAgent, AssistantAgent, CodeExecutorAgent, AssistantAgent]:
-    with tqdm(total=4, 
-             desc="Creating agents", 
+    with tqdm(total=4,
+             desc="Creating agents",
              bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
              colour='green') as pbar:
         async def create_cleaning_reasoning_agent():
@@ -183,11 +183,11 @@ print(f"Saved cleaned dataset to {{output_path}}")
             )
             pbar.update(1)
             return code_checker
-        
+
         list_of_agents = await asyncio.gather(
-            create_cleaning_reasoning_agent(), 
-            create_cleaning_coding_agent(), 
-            create_code_executor(), 
+            create_cleaning_reasoning_agent(),
+            create_cleaning_coding_agent(),
+            create_code_executor(),
             create_code_checker()
         )
         return list_of_agents
@@ -217,7 +217,7 @@ async def run_cleaning_pipeline(df: pd.DataFrame, data_dict: Dict[str, Any], fil
             cleaning_team,
             termination_condition=termination,
         )
-        
+
         # Based on the provided json data dictionary, explicity generate the python code to clean it specifically. Dont use any fictional placeholder, use actual column names and file names.\nData dictionary:
         cleaning_task = f"""Data Cleaning Advisor
 
@@ -255,7 +255,7 @@ async def run_cleaning_pipeline(df: pd.DataFrame, data_dict: Dict[str, Any], fil
     6. NO EDA and NO visualizations.
 </rules>
 """
-    
+
         await Spinner.async_with_spinner(
             message="Loading: ",
             style="braille",
@@ -283,18 +283,18 @@ async def run_cleaning_pipeline(df: pd.DataFrame, data_dict: Dict[str, Any], fil
 if __name__ == "__main__":
     # First progress bar for data loading and profiling
     with tqdm(total=3,
-              desc="Preparing dataset", 
+              desc="Preparing dataset",
               bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
               colour='green') as pbar:
-        
+
         test_file = Path("sheets/sample.csv")
         pbar.update(1)
-        
+
         df = LoadDataset(test_file)
         pbar.update(1)
-        
+
         initial_profile = GetDatasetProfile(df)
         pbar.update(1)
-    
+
     # Run the async operation (create_agents has its own progress bar)
     asyncio.run(run_cleaning_pipeline(df, initial_profile, test_file))
