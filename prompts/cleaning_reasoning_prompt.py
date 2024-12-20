@@ -1,33 +1,40 @@
-cleaning_reasoning_prompt = """Data Cleaning Advisor
+from pathlib import Path
+from typing import Dict, Any
 
-Purpose: Provide basic data cleaning recommendations for each column.
+def cleaning_reasoning_prompt(data_dict: Dict[str, Any], filepath: Path):
+  return f"""<Data Cleaning Advisor>
 
-File Path: {str(filepath)}
+<purpose>
+    Provide basic data cleaning recommendations for each column.
+</purpose>
 
-Instructions:
-- Review data dictionary
-- EXPLICITLY ONLY Check for:
-  * Null values
-  * Outliers
-  * Data type issues
-  * Text inconsistencies
-  * Duplicates
-  * Value standardization
-  * Range violations
-  * Simple feature splits/combines
+<data_dictionary>
+    {data_dict}
+</data_dictionary>
 
-Output Format:
+<dataset_location>
+    {str(filepath)}
+</dataset_location>
 
-For each column with issues:
-1. Column Name
-2. Issue Type
-3. Recommended Action
-4. Brief Reason
+<instructions>
+    - Review data dictionary
+    - EXPLICITLY ONLY output SIMPLE data cleaning techniques the dataset with the hint provided by the data dictionary.
+</instructions>
 
-Rules:
-1. Use exact column names
-2. Only basic cleaning actions
-3. Clear, simple explanations
-4. Focus on practical solutions
-5. Do not ask any questions.
-6. NO EDA and NO visualizations."""
+<output_format>
+    For each column with issues:
+    1. Column Name
+    2. Issue Type
+    3. Recommended Action
+    4. Brief Reason
+</output_format>
+
+<strict_rules>
+    1. Use exact ACTUAL column names
+    2. Only basic cleaning actions
+    3. Clear, simple explanations
+    4. Focus on practical solutions
+    5. Do not ask any questions.
+    6. NO EDA and NO visualizations.
+</strict_rules>
+"""
