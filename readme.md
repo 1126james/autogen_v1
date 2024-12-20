@@ -15,3 +15,6 @@ I have set the below termination condition, but sometimes the agents would infin
 text_term = TextMentionTermination("TERMINATE")
 len_term = MaxMessageTermination(9)
 termination = text_term | len_term
+
+## Findings
+XML prompt with markdown table as data dict generates best results in terms of consistency and time.
