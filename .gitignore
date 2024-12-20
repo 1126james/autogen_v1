@@ -4,6 +4,7 @@ Scripts/
 .aider*
 share/
 bin/
+sheets/credit_card_transactions.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

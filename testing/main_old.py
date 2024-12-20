@@ -20,11 +20,10 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from prompts import cleaning_reasoning_prompt, cleaning_coding_prompt, code_checking_prompt
 from utils import CopyFile, LoadDataset, GetDatasetProfile, Spinner
 
-# Only edit here AND filepath under if __name__ == "__main__":
+
+# ONLY EDIT HERE
 reasoning_model = "qwen2.5:32b-instruct-q8_0"
 coding_model = "qwen2.5-coder:32b-instruct-q8_0"
-
-# Common config
 llm_base_url = "http://34.204.63.234:11434/v1"
 api_key = "none"
 capabilities =  {
@@ -32,10 +31,6 @@ capabilities =  {
         "function_calling": False,
         "json_output": False
     }
-
-#######################################################################
-#   !!! DONT EDIT BELOW EXCEPT FOR if __name__ == "__main__":   !!!   #
-#######################################################################
 
 # Reasoning Model Configuration
 instruct_client_config = OpenAIChatCompletionClient(
@@ -52,15 +47,12 @@ code_client_config = OpenAIChatCompletionClient(
     api_key=api_key,
     model_capabilities=capabilities
 )
-
 ### setup agents - cleaning team (1)
 # Progress bar wrapper for create_agents
 async def create_cleaning_agents(filepath: Path) -> Tuple[AssistantAgent, AssistantAgent, CodeExecutorAgent, AssistantAgent]:
-    
-    # tqdm progress bar
     with tqdm(total=4,
              desc="Creating cleaning team agents",
-             bar_format='{desc:>30}{postfix: <1} {bar}|{n_fmt:>4}/{total_fmt:<4}',
+             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
              colour='green') as pbar:
         
         ### 1.1 Cleaning reasoning agent
@@ -87,7 +79,7 @@ async def create_cleaning_agents(filepath: Path) -> Tuple[AssistantAgent, Assist
             pbar.update(1)
             return cleaning_coding_agent
 
-        ### 1.3 Code executor
+        ### 2. Code executor
         async def create_code_executor() -> CodeExecutorAgent:
             # Setup working directory
             work_dir = Path("coding").absolute()
@@ -96,6 +88,7 @@ async def create_cleaning_agents(filepath: Path) -> Tuple[AssistantAgent, Assist
             sheets_dir.mkdir(parents=True, exist_ok=True)
             outputs_dir = Path("coding/outputs").absolute() # Setup venv .output/ directory
             outputs_dir.mkdir(parents=True, exist_ok=True)
+
 
             # Copy uploaded file to venv
             source_file = filepath.absolute()               # Define source and destination
@@ -118,7 +111,7 @@ async def create_cleaning_agents(filepath: Path) -> Tuple[AssistantAgent, Assist
             pbar.update(1)
             return CodeExecutorAgent("code_executor", code_executor=executor)
 
-        ### 1.4 code checker agent
+        ### 3. code checker agent
         async def create_code_checker() -> AssistantAgent:
             code_checker = AssistantAgent(
                 name="code_checker",
@@ -165,8 +158,7 @@ async def run_cleaning_pipeline(df: pd.DataFrame, data_dict: Dict[str, Any], fil
         # prompt imported from .prompts/
         cleaning_task = cleaning_reasoning_prompt(data_dict, filepath)
         
-        # A loading spinner to know if the code is frozen or not
-        # equal to await Console(cleaning_team_chat.run_stream(task=cleaning_task))
+        # await Console(cleaning_team_chat.run_stream(task=cleaning_task))
         await Spinner.async_with_spinner(
             message="Loading: ",
             style="braille",
@@ -192,22 +184,20 @@ async def run_cleaning_pipeline(df: pd.DataFrame, data_dict: Dict[str, Any], fil
         # return cleaned_df  # This should be the transformed version from code_executor
 
 if __name__ == "__main__":
-
-    # tqdm progress bar
+    # First progress bar for data loading and profiling
     with tqdm(total=3,
               desc="Preparing dataset",
-              bar_format='{desc:>30}{postfix: <1} {bar}|{n_fmt:>4}/{total_fmt:<4}',
+              bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
               colour='green') as pbar:
 
-        # Edit file path
-        test_file = Path("sheets/credit_card_transactions.csv")
+        test_file = Path("../sheets/sample2.csv")
         pbar.update(1)
 
         df = LoadDataset(test_file)
         pbar.update(1)
 
-        # Custom function in utils/ to get data dict in md format
-        initial_profile = GetDatasetProfile(df, output_format="markdown")
+        initial_profile = GetDatasetProfile(df)
         pbar.update(1)
 
+    # Run the async operation (create_agents has its own progress bar)
     asyncio.run(run_cleaning_pipeline(df, initial_profile, test_file))
