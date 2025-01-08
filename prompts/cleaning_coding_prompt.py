@@ -15,7 +15,8 @@ def cleaning_coding_prompt(filepath: Path):
 <instructions>
     - Explicitly output necessary installation commands (sh) and cleaning code (python)
     - No analysis or insights included
-    - NEVER use chained assignment using an inplace method. (For example, when doing 'df[col].method(value, inplace=True)', try using 'df.method({{col: value}}, inplace=True)' or df[col] = df[col].method(value) instead, to perform the operation inplace on the original object.)
+    - MUST NOT PERFORM chained assignments.
+    - Use methods that operate directly on the DataFrame.
     - Code only in two distinct blocks:
     1. sh command for library installation
     2. Python cleaning code
