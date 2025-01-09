@@ -17,7 +17,7 @@ from autogen_ext.code_executors.local import LocalCommandLineCodeExecutor
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 # Local
-from prompts import cleaning_reasoning_prompt, cleaning_coding_prompt, code_checking_prompt
+from prompts import cleaning_reasoning_prompt, cleaning_checking_prompt
 from utils import CopyFile, LoadDataset, GetDatasetProfile, Spinner
 
 # Only edit here AND filepath under if __name__ == "__main__":
@@ -53,42 +53,57 @@ code_client_config = OpenAIChatCompletionClient(
     model_capabilities=capabilities
 )
 
-### setup agents - cleaning team (1)
-# Progress bar wrapper for create_agents
-async def create_cleaning_agents(filepath: Path) -> Tuple[AssistantAgent, AssistantAgent, CodeExecutorAgent, AssistantAgent]:
+### setup agents - cleaning reasoning team 1/4
+async def create_cleaning_reasoning_agents(filepath: Path) -> Tuple[AssistantAgent, AssistantAgent]:
     
     # tqdm progress bar
-    with tqdm(total=4,
-             desc="Creating cleaning team agents",
+    with tqdm(total=3,
+             desc="Creating cleaning reasoning team agents",
              bar_format='{desc:>30}{postfix: <1} {bar}|{n_fmt:>4}/{total_fmt:<4}',
              colour='green') as pbar:
         
-        ### 1.1 Cleaning reasoning agent
-        async def create_cleaning_reasoning_agent():
-            cleaning_reasoning_agent = AssistantAgent(
-                name="cleaning_reasoning_agent",
+        async def _create_Data_Cleaning_Planner() -> AssistantAgent:
+            Data_Cleaning_Planner = AssistantAgent(
+                name="Data_Cleaning_Planner",
                 model_client=instruct_client_config,
-                # Somehow the first prompt would be overwritten by the initial task prompt (under run_cleaning_pipeline())
-                # So this prompt has little to no impact
-                system_message=f"""You are the first agent in the data cleaning pipeline."""
+                system_message=cleaning_reasoning_prompt(filepath),
             )
             pbar.update(1)
-            return cleaning_reasoning_agent
-
-        ### 1.2 Cleaning code generator agent
-        async def create_cleaning_coding_agent() -> AssistantAgent:
+            return Data_Cleaning_Planner
+        
+        async def _create_Plan_Validation_Assistant() -> AssistantAgent:
+            Plan_Validation_Assistant = AssistantAgent(
+                name="Plan_Validation_Assistant",
+                model_client=instruct_client_config,
+                system_message=cleaning_checking_prompt(filepath),
+            )
+            pbar.update(1)
+            return Plan_Validation_Assistant
+        
+        list_of_cleaning_reasoning_agents = await asyncio.gather(
+            _create_Data_Cleaning_Planner(),
+            _create_Plan_Validation_Assistant(),
+        )
+        pbar.update(1)
+        return list_of_cleaning_reasoning_agents
+    
+### setup agents - cleaning coding team 2/4
+async def create_cleaning_reasoning_agents(filepath: Path) -> Tuple[AssistantAgent, CodeExecutorAgent, AssistantAgent]:
+    # tqdm progress bar
+    with tqdm(total=3,
+             desc="Creating cleaning coding team agents",
+             bar_format='{desc:>30}{postfix: <1} {bar}|{n_fmt:>4}/{total_fmt:<4}',
+             colour='green') as pbar:
+        
+        async def _create_cleaning_coding_agent() -> AssistantAgent:
             cleaning_coding_agent = AssistantAgent(
                 name="cleaning_coding_agent",
                 model_client=code_client_config,
-                # Testing XML format for consistent format.
-                # Tested: plain text
-                # To-test: md, json
                 system_message=cleaning_coding_prompt(filepath))
             pbar.update(1)
             return cleaning_coding_agent
 
-        ### 1.3 Code executor
-        async def create_code_executor() -> CodeExecutorAgent:
+        async def _create_code_executor() -> CodeExecutorAgent:
             # Setup working directory
             work_dir = Path("coding").absolute()
             work_dir.mkdir(exist_ok=True)
@@ -119,7 +134,7 @@ async def create_cleaning_agents(filepath: Path) -> Tuple[AssistantAgent, Assist
             return CodeExecutorAgent("code_executor", code_executor=executor)
 
         ### 1.4 code checker agent
-        async def create_code_checker() -> AssistantAgent:
+        async def _create_code_checker() -> AssistantAgent:
             code_checker = AssistantAgent(
                 name="code_checker",
                 model_client=instruct_client_config,
@@ -129,12 +144,11 @@ async def create_cleaning_agents(filepath: Path) -> Tuple[AssistantAgent, Assist
             return code_checker
 
         list_of_cleaning_agents = await asyncio.gather(
-            create_cleaning_reasoning_agent(),
-            create_cleaning_coding_agent(),
-            create_code_executor(),
-            create_code_checker()
+            _create_cleaning_coding_agent(),
+            _create_code_executor(),
+            _create_code_checker()
         )
-        return list_of_cleaning_agents
+        return list_of_cleaning_coding_agents
 
 
 # transformation_assistant = AssistantAgent(
@@ -143,71 +157,53 @@ async def create_cleaning_agents(filepath: Path) -> Tuple[AssistantAgent, Assist
 #     system_message=transformation_prompt # To-do
 # )
 
-async def run_cleaning_pipeline(df: pd.DataFrame, data_dict: Dict[str, Any], filepath: Path) -> pd.DataFrame:
+async def cleaning_reasoning_pipeline(data_dict: Dict[str, Any], filepath: Path):
     """
     Run the complete data cleaning and transformation pipeline
     """
     try:
-        # cleaning_reasoning, cleaning_coding, code_executor, code_checker
-        cleaning_team = await create_cleaning_agents(filepath=filepath)
-
+        # cleaning_reasoning_agent, 
+        cleaning_reasoning_team = await create_cleaning_reasoning_agents(filepath)
+        # cleaning_team = [cleaning_team[0], cleaning_team[1]]
+        
         # Setup termination conditions
-        text_term = TextMentionTermination("TERMINATE") # If the text "TERMINATE" is mentioned - text
-        round_term = MaxMessageTermination(12)          # If max message reaches 12 round - round
-        termination = text_term | round_term            # text OR 12 round is met
+        statusu_pass = TextMentionTermination("Overall Status: Pass")
+        max_round = MaxMessageTermination(5)
+        termination = statusu_pass | max_round
 
-        # First phase: Data Cleaning
+        # First phase: Data Cleaning (Reasoning)
         cleaning_team_chat = RoundRobinGroupChat(
             cleaning_team,
             termination_condition=termination,
         )
-
-        # prompt imported from .prompts/
-        cleaning_task = cleaning_reasoning_prompt(data_dict, filepath)
         
         # A loading spinner to know if the code is frozen or not
-        # equal to await Console(cleaning_team_chat.run_stream(task=cleaning_task))
         await Spinner.async_with_spinner(
             message="Loading: ",
             style="braille",
             console_class=Console,
-            coroutine=cleaning_team_chat.run_stream(task=cleaning_task)
+            coroutine=cleaning_team_chat.run_stream(task=cleaning_reasoning_prompt(filepath, data_dict), cancellation_token=None)
         )
+        # Uncomment below to run the code without spinner
+        # from autogen_agentchat.ui import Console
+        # await cleaning_team_chat.run_stream(task=cleaning_reasoning_prompt(filepath, data_dict), cancellation_token=None)
+        
     except Exception as e:
         raise Exception(f"An error occurred: {str(e)}")
-        # Get cleaned dataframe and updated profile
-        # cleaned_df = df  # This should be updated based on code_executor's output
-        # cleaned_profile = GetDatasetProfile(cleaned_df)
-
-        # # Second phase: Data Transformation
-        # transformation_team = RoundRobinGroupChat(
-        #     [transformation_assistant, code_executor, code_checker],
-        #     termination_condition=termination
-        # )
-
-        # transform_task = f"Suggest and apply transformations based on this profile:\n{cleaned_profile}"
-        # await Console(transformation_team.run_stream(task=transform_task))
-
-        # # Return the final processed dataframe
-        # return cleaned_df  # This should be the transformed version from code_executor
 
 if __name__ == "__main__":
-
-    # tqdm progress bar
     with tqdm(total=3,
               desc="Preparing dataset",
               bar_format='{desc:>30}{postfix: <1} {bar}|{n_fmt:>4}/{total_fmt:<4}',
               colour='green') as pbar:
-
         # Edit file path
         test_file = Path("sheets/credit_card_transactions.csv")
         pbar.update(1)
-
         df = LoadDataset(test_file)
         pbar.update(1)
-
-        # Custom function in utils/ to get data dict in md format
-        initial_profile = GetDatasetProfile(df, output_format="markdown")
+        # Custom function in utils/ to get data dict in markdown/natural language/json format
+        # so far with qwen models, json format is the most consistent for dataset comprehension
+        initial_profile = GetDatasetProfile(df, output_format="json")
         pbar.update(1)
 
-    asyncio.run(run_cleaning_pipeline(df, initial_profile, test_file))
+    asyncio.run(cleaning_reasoning_pipeline(initial_profile, test_file))
